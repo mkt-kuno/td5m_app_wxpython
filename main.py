@@ -1,5 +1,5 @@
 import wx
-from wxasync import AsyncBind, WxAsyncApp, StartCoroutine
+import wxasync
 import asyncio
 import serial
 import serial_asyncio
@@ -11,8 +11,10 @@ ARDUINO_BAUD_RATE = 115200
 TDS530_BAUDRATE = 38400
 TDS530_TIMEOUT_MS = 100/1000
 
-logger = None
-ser_reader, ser_writer = None, None
+parser = argparse.ArgumentParser()
+parser.add_argument("--sport", help="Motor Control Port(Arduino Mega 2560)")
+parser.add_argument("--lport", help="TDS530 Serial Port(TokyoSokki TDS530)")
+args = parser.parse_args()
 
 class TDS530:
     def __init__(self, port = '/dev/ttyUSB0', baudrate = 38400, timeout=0):
@@ -82,10 +84,9 @@ class TDS530:
             ret = None
         return ret
 
-
 class MainFrame(wx.Frame):
     def __init__(self, parent=None):
-        super(MainFrame, self).__init__(parent)
+        super(MainFrame, self).__init__(parent, style=wx.DEFAULT_FRAME_STYLE^wx.RESIZE_BORDER^wx.MAXIMIZE_BOX)
         
         self.SetTitle("5TD Motor Controller and Monitor (wxPython)")
         self.SetSize((800, 1000))
@@ -162,7 +163,7 @@ class MainFrame(wx.Frame):
             g_sizer.Add(self.item_dict["M"]["input"], 1, wx.EXPAND)
 
             incremental_box.Add(g_sizer, 0, wx.EXPAND|wx.ALL, 5)
-        v_box.Add(incremental_box, 0, wx.EXPAND|wx.ALL, 5)
+        v_box.Add(incremental_box, 0, wx.EXPAND|wx.ALL, 2)
 
         command_box = wx.StaticBoxSizer(wx.VERTICAL, self, "Commands")
         if (command_box):
@@ -227,13 +228,13 @@ class MainFrame(wx.Frame):
                     self.item_dict["param"][_name] = _status
 
 
-            _labels = ["I[o____]", "J[_o___]", "K[__o__]", "L[___o_]", "M[____o]", "Time", "Status", "-----", "-----", "-----", ]
+            _labels = ["I[o____]", "J[_o___]", "K[__o__]", "L[___o_]", "M[____o]", "Time", "Status", "Clock", "Control", "Save", ]
             for label in _labels:
                 _label = wx.StaticText(self, label=label, style=wx.ALIGN_CENTER|wx.ST_NO_AUTORESIZE)
                 _label.SetFont(_small_font)
                 g_sizer.Add(_label, 1, wx.EXPAND)
 
-            _statuss = ["I", "J", "K", "L", "M", "time", "status", "-----", "-----", "-----"]
+            _statuss = ["I", "J", "K", "L", "M", "time", "status", "clock", "control", "save"]
             for status in _statuss:
                 _status = wx.StaticText(self, label="0.000", style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
                 _status.SetBackgroundColour(wx.Colour("white"))
@@ -243,22 +244,54 @@ class MainFrame(wx.Frame):
                     continue
                 self.item_dict["param"][status] = _status
 
+            self.item_dict["param"]["status"].SetLabel("IDLE")
+            self.item_dict["param"]["clock"].SetLabel("00:00:00")
+            self.item_dict["param"]["control"].SetLabel("False")
+            self.item_dict["param"]["save"].SetLabel("False")
+
             status_box.Add(g_sizer, 0, wx.EXPAND|wx.ALL, 5)
         v_box.Add(status_box, 0, wx.EXPAND|wx.ALL, 5)
 
         self.SetSizer(v_box)
         self.Layout()
 
-        AsyncBind(wx.EVT_BUTTON, self.button_g91_slow, self.item_dict["button"]["g91_slow"])
-        AsyncBind(wx.EVT_BUTTON, self.button_g91_fase, self.item_dict["button"]["g91_fast"])
-        AsyncBind(wx.EVT_BUTTON, self.button_g52_set, self.item_dict["button"]["g52_set"])
-        AsyncBind(wx.EVT_BUTTON, self.button_gcode_load, self.item_dict["button"]["gcode_load"])
-        AsyncBind(wx.EVT_BUTTON, self.button_gcode_start, self.item_dict["button"]["gcode_start"])
-        AsyncBind(wx.EVT_BUTTON, self.button_gcode_stop, self.item_dict["button"]["gcode_stop"])
-        AsyncBind(wx.EVT_BUTTON, self.button_save_start, self.item_dict["button"]["save_start"])
-        AsyncBind(wx.EVT_BUTTON, self.button_save_stop, self.item_dict["button"]["save_stop"])
-        #StartCoroutine(self.update_clock, self)
+        wxasync.AsyncBind(wx.EVT_BUTTON, self.button_g91_slow,      self.item_dict["button"]["g91_slow"])
+        wxasync.AsyncBind(wx.EVT_BUTTON, self.button_g91_fase,      self.item_dict["button"]["g91_fast"])
+        wxasync.AsyncBind(wx.EVT_BUTTON, self.button_g52_set,       self.item_dict["button"]["g52_set"])
+        wxasync.AsyncBind(wx.EVT_BUTTON, self.button_gcode_load,    self.item_dict["button"]["gcode_load"])
+        wxasync.AsyncBind(wx.EVT_BUTTON, self.button_gcode_start,   self.item_dict["button"]["gcode_start"])
+        wxasync.AsyncBind(wx.EVT_BUTTON, self.button_gcode_stop,    self.item_dict["button"]["gcode_stop"])
+        wxasync.AsyncBind(wx.EVT_BUTTON, self.button_save_start,    self.item_dict["button"]["save_start"])
+        wxasync.AsyncBind(wx.EVT_BUTTON, self.button_save_stop,     self.item_dict["button"]["save_stop"])
         
+        # self.ser_reader, ser_writer
+        # self.ser_reader, self.ser_writer = await serial_asyncio.open_serial_connection(url=args.sport, baudrate=ARDUINO_BAUD_RATE)
+        # global logger
+        # self.logger = TDS530(port=args.lport, baudrate=TDS530_BAUDRATE, timeout=TDS530_TIMEOUT_MS)
+
+        self.is_saving:bool = False
+        self.path_saving:str = ""
+        self.task_saving = None
+        self.is_controlling:bool = False
+
+        wxasync.StartCoroutine(self.update_clock, self)
+        wxasync.StartCoroutine(self.main_loop, self)
+        # wxasync.StartCoroutine(self.logger.task, self)
+    
+    async def file_save_loop(self):
+        while self.is_saving:
+            if self.path_saving != "":
+                print("Saving data to file to %s..." % self.path_saving)
+                # Save data to file
+                # This is a placeholder for actual saving logic
+                pass
+            await asyncio.sleep(0.5)
+
+    async def main_loop(self):
+        while True:
+            
+            await asyncio.sleep(1)
+
     async def button_g91_slow(self, event):
         pass
 
@@ -281,6 +314,8 @@ class MainFrame(wx.Frame):
         self.item_dict["button"]["g91_slow"].Enable(False)
         self.item_dict["button"]["g91_fast"].Enable(False)
         self.item_dict["button"]["g52_set"].Enable(False)
+
+        # Start GCode processing
         pass
 
     async def button_gcode_stop(self, event):
@@ -293,15 +328,36 @@ class MainFrame(wx.Frame):
         self.item_dict["button"]["g91_slow"].Enable(True)
         self.item_dict["button"]["g91_fast"].Enable(True)
         self.item_dict["button"]["g52_set"].Enable(True)
+
+        # Stop GCode processing
         pass
 
     async def button_save_start(self, event):
+        # Start saving data
+        dlg = wx.FileDialog(self, 
+                            message="Save data to file", 
+                            wildcard="CSV files (*.csv)|*.csv", 
+                            defaultDir=wx.StandardPaths.Get().GetDocumentsDir(), 
+                            defaultFile=time.strftime('wx5td_%Y%m%d%H%M%S.csv'),
+                            style=wx.FD_SAVE | wx.FD_OVERWRITE_PROMPT)
+        response  = await wxasync.AsyncShowDialogModal(dlg)
+        if response== wx.ID_CANCEL:
+            # User cancelled the dialog
+            return
+        # Get the path to the file
+        self.path_saving = dlg.GetPath()
+        if not self.path_saving:
+            return
+        # Here you would start the saving process, e.g., open a file and write data
+        print(f"Saving data to {self.path_saving}...")
+        
         # Enable stop button
         self.item_dict["button"]["save_stop"].Enable(True)
         # Disable start button
         self.item_dict["button"]["save_start"].Enable(False)
-        # Start saving data
-        pass
+        self.is_saving = True
+        # Start the file saving loop
+        self.task_saving = wxasync.StartCoroutine(self.file_save_loop, self)
 
     async def button_save_stop(self, event):
         # Enable start button
@@ -309,24 +365,20 @@ class MainFrame(wx.Frame):
         # Disable stop button
         self.item_dict["button"]["save_stop"].Enable(False)
         # Stop saving data
-        pass
+        self.is_saving = False
+        self.path_saving = ""
+        if self.task_saving is not None:
+            self.task_saving.cancel()
+            self.task_saving = None
+        print("Saving stopped.")
 
     async def update_clock(self):
         while True:
-            self.edit_timer.SetLabel(time.strftime('%H:%M:%S'))
-            await asyncio.sleep(0.5)
-
+            self.item_dict["param"]["clock"].SetLabel(time.strftime('%H:%M:%S'))
+            await asyncio.sleep(0.1)
 
 async def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--sport", help="Motor Control Port(Arduino Mega 2560)")
-    parser.add_argument("--lport", help="TDS530 Serial Port(TokyoSokki TDS530)")
-    args = parser.parse_args()
-    
-    global ser_reader, ser_writer
-    # ser_reader, ser_writer = await serial_asyncio.open_serial_connection(url=args.sport, baudrate=ARDUINO_BAUD_RATE)
-
-    app = WxAsyncApp()
+    app = wxasync.WxAsyncApp()
     frame = MainFrame()
     frame.Show()
     app.SetTopWindow(frame)
