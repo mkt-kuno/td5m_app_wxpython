@@ -272,11 +272,13 @@ class MainFrame(wx.Frame):
         self.is_saving:bool = False
         self.path_saving:str = ""
         self.task_saving = None
+
         self.is_controlling:bool = False
+        self.task_controlling = None
 
         wxasync.StartCoroutine(self.update_clock, self)
-        wxasync.StartCoroutine(self.main_loop, self)
-        # wxasync.StartCoroutine(self.logger.task, self)
+        wxasync.StartCoroutine(self.logger_loop, self)
+        wxasync.StartCoroutine(self.ser_arduino_loop, self)
     
     async def file_save_loop(self):
         while self.is_saving:
@@ -287,24 +289,44 @@ class MainFrame(wx.Frame):
                 pass
             await asyncio.sleep(0.5)
 
-    async def main_loop(self):
+    async def gcode_process_loop(self):
+        while self.is_controlling:
+            # Process GCode commands
+            # This is a placeholder for actual GCode processing logic
+            await asyncio.sleep(0.5)
+
+    async def logger_loop(self):
         while True:
+            ## Logger と通信し続ける
+            
+            await asyncio.sleep(1)
+
+    async def ser_arduino_loop(self):
+        while True:
+            ## ser(Arduino) と通信し続ける
             
             await asyncio.sleep(1)
 
     async def button_g91_slow(self, event):
+        # Gcode を生成してバッファリングするだけ
         pass
 
     async def button_g91_fase(self, event):
+        # Gcode を生成してバッファリングするだけ
         pass
 
     async def button_g52_set(self, event):
+        # Gcode を生成してバッファリングするだけ
         pass
 
     async def button_gcode_load(self, event):
+        # Gcode を読込してバッファリングするだけ
         pass
 
     async def button_gcode_start(self, event):
+        # Check if GCode is loaded
+        ## @todo GCodeバッファが空であればReturn
+
         # Enable stop button
         self.item_dict["button"]["gcode_stop"].Enable(True)
         # Disable start button
@@ -316,20 +338,27 @@ class MainFrame(wx.Frame):
         self.item_dict["button"]["g52_set"].Enable(False)
 
         # Start GCode processing
-        pass
+        self.is_controlling = True
+        self.task_controlling = wxasync.StartCoroutine(self.gcode_process_loop, self)
 
     async def button_gcode_stop(self, event):
-        # Enable start button
-        self.item_dict["button"]["gcode_start"].Enable(True)
         # Disable stop button
         self.item_dict["button"]["gcode_stop"].Enable(False)
+        # Stop GCode processing
+        self.is_controlling = False
+        if self.task_controlling is not None:
+            self.task_controlling.cancel()
+            self.task_controlling = None
+        
+        ## @todo 実際にはGcodeのバッファをクリアして、StatusがIDLEになるまで待つ
+
+        # Enable start button
+        self.item_dict["button"]["gcode_start"].Enable(True)
         # Enable Load button
         self.item_dict["button"]["gcode_load"].Enable(True)
         self.item_dict["button"]["g91_slow"].Enable(True)
         self.item_dict["button"]["g91_fast"].Enable(True)
         self.item_dict["button"]["g52_set"].Enable(True)
-
-        # Stop GCode processing
         pass
 
     async def button_save_start(self, event):
