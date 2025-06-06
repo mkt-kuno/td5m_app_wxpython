@@ -2,10 +2,11 @@ import wx
 import wxasync
 import asyncio
 import serial
-import serial_asyncio
+import aioserial
 import time
 import copy
 import argparse
+import tds
 
 ARDUINO_BAUD_RATE = 115200
 TDS530_BAUDRATE = 38400
@@ -15,74 +16,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--sport", help="Motor Control Port(Arduino Mega 2560)")
 parser.add_argument("--lport", help="TDS530 Serial Port(TokyoSokki TDS530)")
 args = parser.parse_args()
-
-class TDS530:
-    def __init__(self, port = '/dev/ttyUSB0', baudrate = 38400, timeout=0):
-        self._port = port
-        self._baudrate = baudrate
-        self._timeout = timeout
-        self._buffer = {}
-        self._queue: asyncio.Queue[dict] = asyncio.Queue()
-
-    def start(self, writer):
-        self.reader.reset_input_buffer()
-        self.writer.reset_output_buffer()
-        self.writer.write('ST\r\n'.encode('ascii'))
-
-    def _cmd_start(self, writer):
-        self.reader.reset_input_buffer()
-        self.writer.reset_output_buffer()
-        self.writer.write('ST\r\n'.encode('ascii'))
-
-    async def task(self):
-        self.reader, self.writer = await serial_asyncio.open_serial_connection(
-            protocol_factory=lambda: self,
-            url=self._port,
-            baudrate=self._baudrate
-        )
-        
-        while (True):
-            # if not self.reader.readable():
-            #     await asyncio.sleep(0.01)
-            #     continue
-            line = await self.reader.readline()
-
-            if line is None:
-                continue
-            line = line.decode('ascii').replace('\r\n', '')
-            if line == '':
-                continue
-            if "ERR" in line:
-                print("ERROR")
-                # @todo もしエラーが出てしまうなら考慮する
-            elif len(line) > 1 and line[0] == '2':
-                # Time型表記
-                #tm = time.strptime(line, '%Y/%d/%m %H:%M:%S')
-                #self._buffer['Time'] = tm
-                self._buffer['Time'] = line
-            elif len(line) > 1 and line[0] == 'M':
-                _temp = line.split("  ")
-                if len(_temp) > 0:
-                    _ch = _temp[0].replace("M", '')
-                if len(_temp) > 1:
-                    _dt = _temp[1]
-                    self._buffer[_ch] = _dt
-            elif 'END       ' in line:
-                self._queue.put_nowait(copy.deepcopy(self._buffer))
-                self._buffer = {}
-                self._cmd_start()
-                break
-            else:
-                print(line)
-    
-    def read(self):
-        ret = None
-        if not self._queue.empty():
-            ret = self._queue.get_nowait()
-        else:
-            # If queue is empty, return None
-            ret = None
-        return ret
 
 class MainFrame(wx.Frame):
     def __init__(self, parent=None):
@@ -124,12 +57,12 @@ class MainFrame(wx.Frame):
             self.item_dict["L"]["displacement"] = wx.StaticText(self, label=_label_def, style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
             self.item_dict["M"]["displacement"] = wx.StaticText(self, label=_label_def, style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
 
-            _bg_colour = wx.Colour("white")
-            self.item_dict["I"]["displacement"].SetBackgroundColour(_bg_colour)
-            self.item_dict["J"]["displacement"].SetBackgroundColour(_bg_colour)
-            self.item_dict["K"]["displacement"].SetBackgroundColour(_bg_colour)
-            self.item_dict["L"]["displacement"].SetBackgroundColour(_bg_colour)
-            self.item_dict["M"]["displacement"].SetBackgroundColour(_bg_colour)
+            # _bg_colour = wx.Colour("white")
+            # self.item_dict["I"]["displacement"].SetBackgroundColour(_bg_colour)
+            # self.item_dict["J"]["displacement"].SetBackgroundColour(_bg_colour)
+            # self.item_dict["K"]["displacement"].SetBackgroundColour(_bg_colour)
+            # self.item_dict["L"]["displacement"].SetBackgroundColour(_bg_colour)
+            # self.item_dict["M"]["displacement"].SetBackgroundColour(_bg_colour)
 
             g_sizer.Add(self.item_dict["I"]["displacement"], 1, wx.EXPAND)
             g_sizer.Add(self.item_dict["J"]["displacement"], 1, wx.EXPAND)
@@ -215,37 +148,38 @@ class MainFrame(wx.Frame):
 
             for start_ch in range(0, 50, NUM_DIV):
                 for ch in range(start_ch, start_ch+NUM_DIV):
-                    _name = "TDS %03d"%ch
+                    _name = "%03d"%ch
                     _label = wx.StaticText(self, label=_name, style=wx.ALIGN_CENTER|wx.ST_NO_AUTORESIZE)
                     _label.SetFont(_small_font)
                     g_sizer.Add(_label, 1, wx.EXPAND)
                 for ch in range(start_ch, start_ch+NUM_DIV):
-                    _name = "TDS %03d"%ch
+                    _name = "TDS%03d"%ch
                     _status = wx.StaticText(self, label="0.000", style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
-                    _status.SetBackgroundColour(wx.Colour("white"))
+                    # _status.SetBackgroundColour(wx.Colour("white"))
                     _status.SetFont(_small_font)
                     g_sizer.Add(_status, 1, wx.EXPAND)
                     self.item_dict["param"][_name] = _status
 
 
-            _labels = ["I[o____]", "J[_o___]", "K[__o__]", "L[___o_]", "M[____o]", "Time", "Status", "Clock", "Control", "Save", ]
+            _labels = ["I[o____]", "J[_o___]", "K[__o__]", "L[___o_]", "M[____o]", "Time1", "Time2", "Status", "Control", "Save", ]
             for label in _labels:
                 _label = wx.StaticText(self, label=label, style=wx.ALIGN_CENTER|wx.ST_NO_AUTORESIZE)
                 _label.SetFont(_small_font)
                 g_sizer.Add(_label, 1, wx.EXPAND)
 
-            _statuss = ["I", "J", "K", "L", "M", "time", "status", "clock", "control", "save"]
-            for status in _statuss:
-                _status = wx.StaticText(self, label="0.000", style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
-                _status.SetBackgroundColour(wx.Colour("white"))
-                _status.SetFont(_small_font)
-                g_sizer.Add(_status, 1, wx.EXPAND)
-                if status == "-----":
+            _statuss = ["I", "J", "K", "L", "M", "time1", "time2", "status", "control", "save"]
+            for _status in _statuss:
+                _item = wx.StaticText(self, label="0.000", style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
+                # _status.SetBackgroundColour(wx.Colour("white"))
+                _item.SetFont(_small_font)
+                g_sizer.Add(_item, 1, wx.EXPAND)
+                if _status == "-----":
                     continue
-                self.item_dict["param"][status] = _status
+                self.item_dict["param"][_status] = _item
 
             self.item_dict["param"]["status"].SetLabel("IDLE")
-            self.item_dict["param"]["clock"].SetLabel("00:00:00")
+            self.item_dict["param"]["time1"].SetLabel("00/01/01")
+            self.item_dict["param"]["time2"].SetLabel("00:00:00")
             self.item_dict["param"]["control"].SetLabel("False")
             self.item_dict["param"]["save"].SetLabel("False")
 
@@ -267,7 +201,8 @@ class MainFrame(wx.Frame):
         # self.ser_reader, ser_writer
         # self.ser_reader, self.ser_writer = await serial_asyncio.open_serial_connection(url=args.sport, baudrate=ARDUINO_BAUD_RATE)
         # global logger
-        # self.logger = TDS530(port=args.lport, baudrate=TDS530_BAUDRATE, timeout=TDS530_TIMEOUT_MS)
+        self._logger = tds.TDS530(port='/dev/ttyUSB0', baudrate=TDS530_BAUDRATE)
+        self._logger.start()
 
         self.is_saving:bool = False
         self.path_saving:str = ""
@@ -276,7 +211,6 @@ class MainFrame(wx.Frame):
         self.is_controlling:bool = False
         self.task_controlling = None
 
-        wxasync.StartCoroutine(self.update_clock, self)
         wxasync.StartCoroutine(self.logger_loop, self)
         wxasync.StartCoroutine(self.ser_arduino_loop, self)
     
@@ -297,9 +231,19 @@ class MainFrame(wx.Frame):
 
     async def logger_loop(self):
         while True:
-            ## Logger と通信し続ける
+            await asyncio.sleep(0.2)
+            _ret:dict = await self._logger.read()
+
+            if not "time" in _ret:
+                continue
             
-            await asyncio.sleep(1)
+            _dt = _ret["time"]
+            self.item_dict["param"]["time1"].SetLabel(_dt.strftime('%Y/%m/%d')[2:])
+            self.item_dict["param"]["time2"].SetLabel(_dt.strftime('%H:%M:%S'))
+
+            for ch in range(50):
+                _val = "%.1f" % _ret["%03d"%ch]
+                self.item_dict["param"]["TDS%03d"%ch].SetLabel(_val)
 
     async def ser_arduino_loop(self):
         while True:
@@ -400,11 +344,6 @@ class MainFrame(wx.Frame):
             self.task_saving.cancel()
             self.task_saving = None
         print("Saving stopped.")
-
-    async def update_clock(self):
-        while True:
-            self.item_dict["param"]["clock"].SetLabel(time.strftime('%H:%M:%S'))
-            await asyncio.sleep(0.1)
 
 async def main():
     app = wxasync.WxAsyncApp()
