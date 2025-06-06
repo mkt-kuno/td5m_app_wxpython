@@ -51,18 +51,11 @@ class MainFrame(wx.Frame):
             g_sizer.Add(wx.StaticText(self, label="M [____o]", style=wx.ALIGN_CENTER|wx.ST_NO_AUTORESIZE), 1, wx.EXPAND)
 
             _label_def = "0.000"
-            self.item_dict["I"]["displacement"] = wx.StaticText(self, label=_label_def, style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
-            self.item_dict["J"]["displacement"] = wx.StaticText(self, label=_label_def, style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
-            self.item_dict["K"]["displacement"] = wx.StaticText(self, label=_label_def, style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
-            self.item_dict["L"]["displacement"] = wx.StaticText(self, label=_label_def, style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
-            self.item_dict["M"]["displacement"] = wx.StaticText(self, label=_label_def, style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
-
-            # _bg_colour = wx.Colour("white")
-            # self.item_dict["I"]["displacement"].SetBackgroundColour(_bg_colour)
-            # self.item_dict["J"]["displacement"].SetBackgroundColour(_bg_colour)
-            # self.item_dict["K"]["displacement"].SetBackgroundColour(_bg_colour)
-            # self.item_dict["L"]["displacement"].SetBackgroundColour(_bg_colour)
-            # self.item_dict["M"]["displacement"].SetBackgroundColour(_bg_colour)
+            self.item_dict["I"]["displacement"] = wx.StaticText(self, label=_label_def, style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE|wx.BORDER_SIMPLE)
+            self.item_dict["J"]["displacement"] = wx.StaticText(self, label=_label_def, style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE|wx.BORDER_SIMPLE)
+            self.item_dict["K"]["displacement"] = wx.StaticText(self, label=_label_def, style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE|wx.BORDER_SIMPLE)
+            self.item_dict["L"]["displacement"] = wx.StaticText(self, label=_label_def, style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE|wx.BORDER_SIMPLE)
+            self.item_dict["M"]["displacement"] = wx.StaticText(self, label=_label_def, style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE|wx.BORDER_SIMPLE)
 
             g_sizer.Add(self.item_dict["I"]["displacement"], 1, wx.EXPAND)
             g_sizer.Add(self.item_dict["J"]["displacement"], 1, wx.EXPAND)
@@ -154,8 +147,7 @@ class MainFrame(wx.Frame):
                     g_sizer.Add(_label, 1, wx.EXPAND)
                 for ch in range(start_ch, start_ch+NUM_DIV):
                     _name = "TDS%03d"%ch
-                    _status = wx.StaticText(self, label="0.000", style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
-                    # _status.SetBackgroundColour(wx.Colour("white"))
+                    _status = wx.StaticText(self, label="0.000", style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE|wx.BORDER_SIMPLE)
                     _status.SetFont(_small_font)
                     g_sizer.Add(_status, 1, wx.EXPAND)
                     self.item_dict["param"][_name] = _status
@@ -169,8 +161,7 @@ class MainFrame(wx.Frame):
 
             _statuss = ["I", "J", "K", "L", "M", "time1", "time2", "status", "control", "save"]
             for _status in _statuss:
-                _item = wx.StaticText(self, label="0.000", style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE)
-                # _status.SetBackgroundColour(wx.Colour("white"))
+                _item = wx.StaticText(self, label="0.000", style=wx.ALIGN_RIGHT|wx.ST_NO_AUTORESIZE|wx.BORDER_SIMPLE)
                 _item.SetFont(_small_font)
                 g_sizer.Add(_item, 1, wx.EXPAND)
                 if _status == "-----":
@@ -201,8 +192,12 @@ class MainFrame(wx.Frame):
         # self.ser_reader, ser_writer
         # self.ser_reader, self.ser_writer = await serial_asyncio.open_serial_connection(url=args.sport, baudrate=ARDUINO_BAUD_RATE)
         # global logger
-        self._logger = tds.TDS530(port='/dev/ttyUSB0', baudrate=TDS530_BAUDRATE)
-        self._logger.start()
+        
+        try:
+            self._logger = tds.TDS530(port='/dev/ttyUSB0', baudrate=TDS530_BAUDRATE)
+            self._logger.start()
+        except Exception as e:
+            pass
 
         self.is_saving:bool = False
         self.path_saving:str = ""
